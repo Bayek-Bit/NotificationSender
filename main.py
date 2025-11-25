@@ -1,11 +1,14 @@
+import asyncio
+from dataclasses import dataclass
 from datetime import datetime as dt
 
+from database import schedule_notification
 
+@dataclass
 class Notification:
-    def __init__(self, user_id: str, message: str, time_to_notify: dt):
-        self.user_id = user_id
-        self.message = message
-        self.time_to_notify = time_to_notify
+        user_id: int
+        message: str
+        time_to_notify: dt
 
 
 class Scheduler:
@@ -15,19 +18,23 @@ class Scheduler:
     def schedule(self, notification: Notification):
         self.__notification_list.append(notification)
 
+        try:
+            asyncio.run(
+                self._save_to_db(notification)
+            )
+        except Exception as ex:
+            print(ex)
+
+    async def _save_to_db(self, notification: Notification):
+        db_id = await schedule_notification(
+            user_id=int(notification.user_id),
+            message=notification.message,
+            send_at=notification.time_to_notify,
+        )
+        print(f"Сохранено в БД с id={db_id}")
+
     def run_pending(self):
-        for notification in self.__notification_list:
-            date_now = dt.now()
-            if date_now > notification.time_to_notify:
-                # Форматируем уведомление, которое будет отправлено
-                # Потом добавлю либо полноценные логи, либо просто сообщение будет на английском языке
-                print(f"Сообщение для пользователя {notification.user_id} отправлено.\
-                    \nТекст сообщения: {notification.message}\
-                    \nЗапланированное время: {notification.time_to_notify}\
-                    \nДата фактического отправления: {date_now}\
-                ")
-                # Удаляем уведомление, ибо мы его уже отправили
-                self.__notification_list.remove(notification)
+        pass
 
 
 scheduler = Scheduler()
