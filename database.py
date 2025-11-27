@@ -1,81 +1,83 @@
-import asyncio
 from datetime import datetime, timezone
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from models import Base, Notification
-from config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from config import DATABASE_URL
+from models import Base, Notification
+
+
+# Создание engine и сессии
+engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def schedule_notification(notification: Notification) -> int | None:
+async def schedule_notification(notification: Notification) -> int:
     send_at = notification.send_at
     if send_at.tzinfo is None:
-        send_at = notification.send_at.replace(tzinfo=timezone.utc)
+        send_at = send_at.replace(tzinfo=timezone.utc)
 
-    if notification.send_at <= datetime.now(timezone.utc):
-        raise ValueError("Send time(send_at) should be in future")
+    if send_at <= datetime.now(timezone.utc):
+        raise ValueError("send_at должен быть в будущем")
 
-    query = text("""
+    query = text(
+        """
         INSERT INTO scheduled_notifications (user_id, message, send_at, status)
         VALUES (:user_id, :message, :send_at, 'pending')
         RETURNING id
-    """)
+        """
+    )
 
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            result = await session.execute(
-                query,
-                {
-                    "user_id": notification.user_id,
-                    "message": notification.message,
-                    "send_at": send_at
-                }
-            )
-            return result.scalar_one()
-
-async def get_notifications_to_send():
-    """Get notifications to send from datetime now"""
-    now = datetime.now(timezone.utc)
-    # Пока не совсем атомарно)
-    query = text("""
-        SELECT * FROM scheduled_notifications
-        WHERE send_at <= (:now)
-        AND status = 'pending'
-    """)
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             query,
             {
-                "now": now
-            }
+                "user_id": notification.user_id,
+                "message": notification.message,
+                "send_at": send_at,
+            },
         )
+        new_id = result.scalar_one()
+        await session.commit()
+        return new_id
+
+
+async def get_notifications_to_send() -> list[dict]:
+    now = datetime.now(timezone.utc)
+
+    query = text(
+        """
+        SELECT *
+        FROM scheduled_notifications
+        WHERE send_at <= :now AND status = 'pending'
+        """
+    )
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query, {"now": now})
         return result.mappings().all()
 
-async def mark_notification_as_sent(notification: dict):
-    query = text("""
+
+async def mark_notification_as_sent(notification_row: dict) -> None:
+    query = text(
+        """
         UPDATE scheduled_notifications
         SET status = 'sent'
         WHERE id = :notification_id AND user_id = :user_id
-    """)
+        """
+    )
 
     async with AsyncSessionLocal() as session:
-        try:
-            await session.execute(
-                query,
-                {
-                    "notification_id": notification['id'],
-                    "user_id": notification['user_id']
-                }
-            )
-            await session.commit()
-            return True
-        except Exception as ex:
-            print(ex)
+        await session.execute(
+            query,
+            {
+                "notification_id": notification_row["id"],
+                "user_id": notification_row["user_id"],
+            },
+        )
+        await session.commit()
 
-async def create_tables():
+
+async def create_tables() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        a = await get_notifications_to_send()
-        print(a)
