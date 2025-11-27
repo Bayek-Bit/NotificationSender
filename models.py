@@ -19,7 +19,7 @@ class User(Base):
 
     # Связь один-ко-многим с уведомлениями
     notifications: Mapped[List["Notification"]] = relationship(
-        "Notifications",
+        "Notification",
         back_populates="user",
         cascade="all, delete-orphan",  # если удаляем пользователя — удалятся его уведомления
         lazy="selectin",  # эффективная загрузка (рекомендуется для async)

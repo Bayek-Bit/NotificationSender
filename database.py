@@ -10,8 +10,8 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def schedule_notification(notification: Notification) -> int | None:
-
-    if notification.send_at.tzinfo is None:
+    send_at = notification.send_at
+    if send_at.tzinfo is None:
         send_at = notification.send_at.replace(tzinfo=timezone.utc)
 
     if notification.send_at <= datetime.now(timezone.utc):
@@ -30,7 +30,7 @@ async def schedule_notification(notification: Notification) -> int | None:
                 {
                     "user_id": notification.user_id,
                     "message": notification.message,
-                    "send_at": notification.send_at
+                    "send_at": send_at
                 }
             )
             return result.scalar_one()
@@ -53,7 +53,7 @@ async def get_notifications_to_send():
         )
         return result.mappings().all()
 
-async def mark_notification_as_sent(notification: Notification):
+async def mark_notification_as_sent(notification: dict):
     query = text("""
         UPDATE scheduled_notifications
         SET status = 'sent'
@@ -65,8 +65,8 @@ async def mark_notification_as_sent(notification: Notification):
             await session.execute(
                 query,
                 {
-                    "notification_id": notification.id,
-                    "user_id": notification.user_id
+                    "notification_id": notification['id'],
+                    "user_id": notification['user_id']
                 }
             )
             await session.commit()
