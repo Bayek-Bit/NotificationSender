@@ -12,7 +12,7 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 async def schedule_notification(notification: Notification) -> int | None:
 
     if notification.send_at.tzinfo is None:
-        send_at = send_at.replace(tzinfo=timezone.utc)
+        send_at = notification.send_at.replace(tzinfo=timezone.utc)
 
     if notification.send_at <= datetime.now(timezone.utc):
         raise ValueError("Send time(send_at) should be in future")
@@ -55,26 +55,27 @@ async def get_notifications_to_send():
 
 async def mark_notification_as_sent(notification: Notification):
     query = text("""
-        UPDATE TABLE scheduled_notifications
+        UPDATE scheduled_notifications
         SET status = 'sent'
-        WHERE id = (:notification_id) AND user_id = (:user_id)
+        WHERE id = :notification_id AND user_id = :user_id
     """)
 
     async with AsyncSessionLocal() as session:
-        await session.execute(
-            query,
-            {
-                "notification_id": notification.id,
-                "user_id": notification.user_id
-            }
-        )
-        return True
+        try:
+            await session.execute(
+                query,
+                {
+                    "notification_id": notification.id,
+                    "user_id": notification.user_id
+                }
+            )
+            await session.commit()
+            return True
+        except Exception as ex:
+            print(ex)
 
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         a = await get_notifications_to_send()
         print(a)
-
-# Запуск
-asyncio.run(create_tables())

@@ -18,7 +18,7 @@ class User(Base):
     fullname: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Связь один-ко-многим с уведомлениями
-    notifications: Mapped[List["Notifications"]] = relationship(
+    notifications: Mapped[List["Notification"]] = relationship(
         "Notifications",
         back_populates="user",
         cascade="all, delete-orphan",  # если удаляем пользователя — удалятся его уведомления
@@ -33,7 +33,7 @@ class User(Base):
         return f"User(id={self.id!r}, name={self.name!r}, fullname={self.fullname!r})"
 
 
-class Notifications(Base):
+class Notification(Base):
     __tablename__ = "scheduled_notifications"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -70,6 +70,6 @@ class Notifications(Base):
 
     def __repr__(self) -> str:
         return (
-            f"Notifications(id={self.id!r}, user_id={self.user_id!r}, "
+            f"Notification(id={self.id!r}, user_id={self.user_id!r}, "
             f"status={self.status!r}, send_at={self.send_at!r})"
         )

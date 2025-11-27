@@ -1,83 +1,55 @@
 import asyncio
-from dataclasses import dataclass
-from datetime import datetime as dt
 
-from database import schedule_notification
+import logging
 
-@dataclass
-class Notification:
-        user_id: int
-        message: str
-        time_to_notify: dt
+from database import schedule_notification, get_notifications_to_send, mark_notification_as_sent, create_tables
+from models import Notification
 
 
 class Scheduler:
-    def __init__(self):
-        self.__notification_list = []
-
-    def schedule(self, notification: Notification):
-        self.__notification_list.append(notification)
-
-        try:
-            asyncio.run(
-                self._save_to_db(notification)
-            )
-        except Exception as ex:
-            print(ex)
+    async def schedule(self, notification: Notification):
+        await self._save_to_db(notification)
 
     async def _save_to_db(self, notification: Notification):
-        db_id = await schedule_notification(
-            user_id=int(notification.user_id),
-            message=notification.message,
-            send_at=notification.time_to_notify,
-        )
-        print(f"Сохранено в БД с id={db_id}")
+        db_id = await schedule_notification(notification)
+        logging.info(f"[INFO] Сохранено в БД с id={db_id}")
 
-    def run_pending(self):
-        pass
+    async def _send(self, notification):
+        # Логика отправки
+        logging.info(f">>> ОТПРАВКА: {notification['message']} пользователю {notification['user_id']}")
 
+        await mark_notification_as_sent(notification)
 
-scheduler = Scheduler()
-scheduler.schedule(Notification("Hbm-12", "Вас привестствует программа бета-теста.", dt.now()))
-scheduler.run_pending()  # Отправляем сообщение, так как небольшое время прошло)
+    async def serve(self):
+        # Получаем актуальное время
+        # Находим записи, которые надо отправить
+        # Отправляем
+        # Меняем статус в бд
+        # Удаляем из списка
+        while True:
+            pending_tasks = await get_notifications_to_send()
+            # Если есть, что отправить
+            if pending_tasks:
+                for task in pending_tasks:
+                    try:
+                        await self._send(task)
+                    except Exception as ex:
+                        logging.warning(ex)
 
-scheduler.schedule(Notification("abc-4F", "Вы в 2050!", dt(year=2050, month=1, day=1)))
-# Ничего не выведет, ибо старое уведомление отправлено и удалено из списка
-# А 2050 еще не наступил)
-scheduler.run_pending()
-
-
-def check_age(age: int):
-    if isinstance(age, int):
-        if age < 18:
-            raise ValueError("Вы должны быть старше 18 лет")
-    else:
-        raise TypeError("Введите корректное число")
-
-
-class TaskError(Exception):
-    def __init__(self, message):
-        super().__init__(message)
+            await asyncio.sleep(5)
 
 
-class TaskManager:
-    def __init__(self):
-        self.__task_list = []
+async def main():
+    await create_tables()
 
-    def add_task(self, task: dict):
-        if isinstance(task, dict):
-            title = task.get("title")
-            completed = task.get("completed")
+    scheduler = Scheduler()
+    await scheduler.serve()
+    # TODO: метод для записи нового уведомления
+    # await scheduler.schedule(Notification(1, "Привет из async!", dt.now() + timedelta(seconds=3)))
+    # await scheduler.schedule(Notification(2, "Второе уведомление", dt.now() + timedelta(seconds=10)))
 
-            if (title is None) or (completed is None):
-                raise TaskError("Задание должно содержать ключи title и completed")
-        else:
-            raise TypeError("Неверный тип данных. Задание необходимо передавать в словаре(dict)")
+    await asyncio.sleep(15)  # даём поработать
 
 
-task_manager = TaskManager()
-# Так как мы не обрабатываем исключение, то программа завершится на следующей строчке
-task_manager.add_task({"title": "Купить шкаф"})  # -> TaskError; кастомное исключение
-# И для собственного желания еще один кейс, который завершит нашу программу
-# Хоть она и завершилась уже на прошлом исключении
-task_manager.add_task(["Купить кухню"])  # -> TypeError; неверный тип данных
+if __name__ == "__main__":
+    asyncio.run(main())
